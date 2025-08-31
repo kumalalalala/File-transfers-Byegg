@@ -1,0 +1,25 @@
+{
+  "name": "real-time-file-transfer",
+  "version": "1.0.0",
+  "description": "Real-time file transfer website with Node.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "electron": "^24.0.0",
+    "express": "^4.21.2",
+    "express-fileupload": "^1.5.2",
+    "fs-extra": "^11.1.1",
+    "http-proxy-middleware": "^3.0.5",
+    "multer": "^2.0.2",
+    "rimraf": "^6.0.1",
+    "sanitize-filename": "^1.6.3",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
