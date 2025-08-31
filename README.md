@@ -164,10 +164,4 @@ Or simply **scan the QR code displayed in the terminal** for quick access.
 
 ---
 
-## 📜 License
-
-`MIT`
-
----
-
 © 2025 File Transfer Server. Optimized for Windows environments. For support, contact your system administrator.
