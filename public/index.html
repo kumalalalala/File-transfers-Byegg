@@ -4,6 +4,54 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Real-Time File Transfer</title>
+
+  <!-- ============================
+       FAVICONS & PWA (đa nền tảng)
+       Đặt các file vào /icons/ hoặc chỉnh lại href nếu để chỗ khác
+       Files recommended:
+         /icons/favicon.ico
+         /icons/favicon-16x16.png
+         /icons/favicon-32x32.png
+         /icons/favicon-48x48.png
+         /icons/android-chrome-192x192.png
+         /icons/android-chrome-512x512.png
+         /icons/apple-touch-icon.png (180x180)
+         /icons/mstile-150x150.png
+         /icons/safari-pinned-tab.svg
+         /site.webmanifest
+  ============================ -->
+
+  <!-- Standard favicon.ico (fallback) -->
+  <link rel="shortcut icon" href="/icons/favicon.ico" type="image/x-icon">
+
+  <!-- PNG favicons in various sizes (browsers / platforms) -->
+  <link rel="icon" type="image/x-icon" sizes="16x16" href="favicon16.ico">
+  <link rel="icon" type="image/x-icon" sizes="32x32" href="favicon32.ico">
+  <link rel="icon" type="image/x-icon" sizes="48x48" href="favicon48.ico">
+  <link rel="icon" type="image/x-icon" sizes="64x64" href="favicon64.ico">
+  <link rel="icon" type="image/x-icon" sizes="128x128" href="favicon128.ico">
+  <link rel="icon" type="image/x-icon" sizes="256x256" href="favicon256.ico">
+
+  <!-- Android/Chrome -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/android-chrome-192x192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icons/android-chrome-512x512.png">
+
+  <!-- Apple touch icon (iOS) -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+
+  <!-- Safari pinned tab (monochrome SVG, color will be applied) -->
+  <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#29b6f6">
+
+  <!-- Web App Manifest for PWA/Android -->
+  <link rel="manifest" href="/site.webmanifest">
+
+  <!-- Microsoft tile (Windows) -->
+  <meta name="msapplication-TileColor" content="#121212">
+  <meta name="msapplication-TileImage" content="/icons/mstile-150x150.png">
+
+  <!-- Theme color for mobile browsers -->
+  <meta name="theme-color" content="#121212">
+
   <style>
     :root {
       /* Màu chính (được điều chỉnh để phù hợp với nền tối) */
@@ -409,94 +457,94 @@
       }
     }
   
-/* --- Frosted translucent cyan -> aqua-green animated background --- */
-body {
-  position: relative; /* cần để pseudo-element đứng dưới nội dung */
-  min-height: 100vh;
-  padding: 20px;
-  color: var(--text);
-  line-height: 1.6;
-  overflow-x: hidden;
-  background-attachment: fixed;
-}
+  /* --- Frosted translucent cyan -> aqua-green animated background --- */
+  body {
+    position: relative; /* cần để pseudo-element đứng dưới nội dung */
+    min-height: 100vh;
+    padding: 20px;
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+    background-attachment: fixed;
+  }
 
-/* đảm bảo nội dung đứng trên overlay */
-.container {
-  position: relative;
-  z-index: 1;
-}
+  /* đảm bảo nội dung đứng trên overlay */
+  .container {
+    position: relative;
+    z-index: 1;
+  }
 
-/* overlay nền nhám mờ, full-screen, không chặn tương tác */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0; /* top:0; right:0; bottom:0; left:0; */
-  z-index: 0; /* nội dung .container có z-index:1 nên sẽ nằm trên */
-  pointer-events: none;
-  /* gradient từ cyan -> aqua-green, trong suốt nhẹ (alpha) */
-  --overlay-alpha: 0.20;
-  background: linear-gradient(
-    120deg,
-    rgba(0, 188, 212, var(--overlay-alpha)),
-    rgba(0, 230, 160, var(--overlay-alpha))
-  );
-  background-size: 200% 200%;
-  /* hiệu ứng nhám/mờ */
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-  /* tăng độ “nhám” nếu muốn (tùy chọn): mix-blend-mode hoặc opacity */
-  opacity: 0.98;
-  transition: opacity 300ms ease;
-  animation: bgShift 14s ease-in-out infinite;
-}
-
-/* animation đổi nhẹ giữa các sắc thái để cảm giác 'từ từ chuyển màu' */
-@keyframes bgShift {
-  0% {
+  /* overlay nền nhám mờ, full-screen, không chặn tương tác */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0; /* top:0; right:0; bottom:0; left:0; */
+    z-index: 0; /* nội dung .container có z-index:1 nên sẽ nằm trên */
+    pointer-events: none;
+    /* gradient từ cyan -> aqua-green, trong suốt nhẹ (alpha) */
+    --overlay-alpha: 0.20;
     background: linear-gradient(
       120deg,
       rgba(0, 188, 212, var(--overlay-alpha)),
       rgba(0, 230, 160, var(--overlay-alpha))
     );
-    background-position: 0% 50%;
+    background-size: 200% 200%;
+    /* hiệu ứng nhám/mờ */
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    /* tăng độ “nhám” nếu muốn (tùy chọn): mix-blend-mode hoặc opacity */
+    opacity: 0.98;
+    transition: opacity 300ms ease;
+    animation: bgShift 14s ease-in-out infinite;
   }
-  50% {
-    background: linear-gradient(
-      120deg,
-      rgba(0, 160, 200, calc(var(--overlay-alpha) + 0.03)),
-      rgba(0, 200, 140, calc(var(--overlay-alpha) + 0.03))
-    );
-    background-position: 100% 50%;
-  }
-  100% {
-    background: linear-gradient(
-      120deg,
-      rgba(0, 188, 212, var(--overlay-alpha)),
-      rgba(0, 230, 160, var(--overlay-alpha))
-    );
-    background-position: 0% 50%;
-  }
-}
 
-/* tôn trọng những người giảm chuyển động */
-@media (prefers-reduced-motion: reduce) {
-  body::before {
-    animation: none;
+  /* animation đổi nhẹ giữa các sắc thái để cảm giác 'từ từ chuyển màu' */
+  @keyframes bgShift {
+    0% {
+      background: linear-gradient(
+        120deg,
+        rgba(0, 188, 212, var(--overlay-alpha)),
+        rgba(0, 230, 160, var(--overlay-alpha))
+      );
+      background-position: 0% 50%;
+    }
+    50% {
+      background: linear-gradient(
+        120deg,
+        rgba(0, 160, 200, calc(var(--overlay-alpha) + 0.03)),
+        rgba(0, 200, 140, calc(var(--overlay-alpha) + 0.03))
+      );
+      background-position: 100% 50%;
+    }
+    100% {
+      background: linear-gradient(
+        120deg,
+        rgba(0, 188, 212, var(--overlay-alpha)),
+        rgba(0, 230, 160, var(--overlay-alpha))
+      );
+      background-position: 0% 50%;
+    }
   }
-}
 
-/* Fallback cho trình duyệt không hỗ trợ backdrop-filter:
-   mỗi khi backdrop-filter không có hiệu lực, overlay vẫn hiển thị màu mờ. */
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  body::before {
-    background: linear-gradient(
-      120deg,
-      rgba(0, 188, 212, 0.22),
-      rgba(0, 230, 160, 0.22)
-    );
+  /* tôn trọng những người giảm chuyển động */
+  @media (prefers-reduced-motion: reduce) {
+    body::before {
+      animation: none;
+    }
   }
-}
-</style>
+
+  /* Fallback cho trình duyệt không hỗ trợ backdrop-filter:
+     mỗi khi backdrop-filter không có hiệu lực, overlay vẫn hiển thị màu mờ. */
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    body::before {
+      background: linear-gradient(
+        120deg,
+        rgba(0, 188, 212, 0.22),
+        rgba(0, 230, 160, 0.22)
+      );
+    }
+  }
+  </style>
 </head>
 <body>
   <div class="container">
