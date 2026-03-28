@@ -1,0 +1,27 @@
+{
+  "name": "real-time-file-transfer",
+  "version": "1.0.0",
+  "description": "Real-time file transfer website with Node.js",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "bun run server.js",
+    "build": "bun build --compile server.js --outfile TransferByegg.exe"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "^9.4.0",
+    "adm-zip": "^0.5.16",
+    "fastify": "^5.8.4",
+    "fastify-socket.io": "^5.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "views/**/*"
+    ]
+  }
+}
