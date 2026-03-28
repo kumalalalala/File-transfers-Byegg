@@ -26,33 +26,7 @@
   <!-- Standard favicon.ico (fallback) -->
   <link rel="shortcut icon" href="/icons/favicon.ico" type="image/x-icon">
 
-  <!-- PNG favicons in various sizes (browsers / platforms) -->
-  <link rel="icon" type="image/x-icon" sizes="16x16" href="favicon16.ico">
-  <link rel="icon" type="image/x-icon" sizes="32x32" href="favicon32.ico">
-  <link rel="icon" type="image/x-icon" sizes="48x48" href="favicon48.ico">
-  <link rel="icon" type="image/x-icon" sizes="64x64" href="favicon64.ico">
-  <link rel="icon" type="image/x-icon" sizes="128x128" href="favicon128.ico">
-  <link rel="icon" type="image/x-icon" sizes="256x256" href="favicon256.ico">
-
-  <!-- Android/Chrome -->
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/android-chrome-192x192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/icons/android-chrome-512x512.png">
-
-  <!-- Apple touch icon (iOS) -->
-  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
-
-  <!-- Safari pinned tab (monochrome SVG, color will be applied) -->
-  <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#29b6f6">
-
   <!-- Web App Manifest for PWA/Android -->
-  <link rel="manifest" href="/site.webmanifest">
-
-  <!-- Microsoft tile (Windows) -->
-  <meta name="msapplication-TileColor" content="#121212">
-  <meta name="msapplication-TileImage" content="/icons/mstile-150x150.png">
-
-  <!-- Theme color for mobile browsers -->
-  <meta name="theme-color" content="#29b6f6">
   <link rel="manifest" href="/manifest.json">
   <script>
     if ('serviceWorker' in navigator) {
@@ -815,6 +789,8 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
+    const escapeHTML = (s) => s.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\'': '&#39;', '"': '&quot;' }[t]));
+
     document.addEventListener('DOMContentLoaded', () => {
       const adminWarning = document.getElementById('adminWarning');
       const storageConfig = document.getElementById('storageConfig');
@@ -859,12 +835,21 @@
       // Fast Hash deduplication algorithm
       async function getFastHash(file) {
         try {
-          const chunkSize = 1024 * 1024; // 1MB
+          function simpleChecksum(view) {
+            let hash = 0;
+            for (let i = 0; i < view.length; i++) {
+              hash = Math.imul(31, hash) + view[i] | 0;
+            }
+            return hash.toString(16);
+          }
+          const chunkSize = 100 * 1024; // 100KB is super fast
           const startBlob = file.slice(0, Math.min(chunkSize, file.size));
           const endBlob = file.size > chunkSize ? file.slice(file.size - chunkSize, file.size) : new Blob([]);
-          const buffer = new Uint8Array(await new Blob([startBlob, endBlob, file.size.toString()]).arrayBuffer());
-          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-          return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+          const startBuf = new Uint8Array(await startBlob.arrayBuffer());
+          const endBuf = new Uint8Array(await endBlob.arrayBuffer());
+
+          return file.size + '_' + simpleChecksum(startBuf) + '_' + simpleChecksum(endBuf);
         } catch (e) { return null; }
       }
 
@@ -983,13 +968,13 @@
             deviceId = Date.now().toString(36) + Math.random().toString(36).substring(2);
             localStorage.setItem('deviceId', deviceId);
           }
-          const rawId = deviceId + '_' + file.name + '_' + file.size + '_' + file.lastModified;
-          const fileId = btoa(encodeURIComponent(rawId)).replace(/[^a-zA-Z0-9]/g, '').substring(0, 50);
+          const rawId = deviceId + '_' + encodeURIComponent(file.name) + '_' + file.size;
+          const fileId = rawId.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 80) + '_' + file.lastModified;
 
           const uploadItem = document.createElement('div');
           uploadItem.className = 'file-card';
           uploadItem.innerHTML = `
-            <div class="file-header">${file.name}</div>
+            <div class="file-header" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</div>
             <div class="file-body">
               <div class="file-info">
                 <span class="file-size">${formatSize(file.size)}</span>
@@ -1044,8 +1029,11 @@
             timeEl.textContent = 'Cancelled';
             timeEl.style.color = '#ff9800';
             setTimeout(() => uploadItem.remove(), 2000);
-            // Call server to cleanup
-            fetch(`/api/upload/cancel/${fileId}`, { method: 'DELETE' }).catch(() => console.log('Cleanup failed'));
+
+            // Delay cleanup to allow Backend stream to gracefully release Windows IO File Locks (Prevent EBUSY Orphan leak)
+            setTimeout(() => {
+              fetch(`/api/upload/cancel/${fileId}`, { method: 'DELETE' }).catch(() => console.log('Cleanup failed'));
+            }, 1000);
           });
 
           const uploadChunkTask = async (chunkIndex) => {
@@ -1060,7 +1048,12 @@
               if (!navigator.onLine) {
                 timeEl.textContent = 'Offline. Chờ mạng...';
                 timeEl.style.color = '#ffca28';
-                await new Promise(r => window.addEventListener('online', r, { once: true }));
+                await new Promise(r => {
+                  const cleanup = () => { window.removeEventListener('online', r); abortController.signal.removeEventListener('abort', cleanup); r(); };
+                  window.addEventListener('online', cleanup, { once: true });
+                  abortController.signal.addEventListener('abort', cleanup);
+                });
+                if (isCancelled) break;
               }
 
               // Safari Timeout Hack (Safari leaves fetch streams hanging infinitely if connection drops slightly)
@@ -1098,6 +1091,14 @@
                 clearTimeout(timeoutId);
                 abortController.signal.removeEventListener('abort', abortListener);
                 if (abortController.signal.aborted) break; // User legitimately canceled
+
+                // Nếu là lỗi 400 (Client gửi sai chunk, server chặn), ngắt hẳn vòng lặp tránh treo vô hạn
+                if (err.message.includes('400')) {
+                  timeEl.textContent = 'Lỗi tệp tin. Đã hủy!';
+                  timeEl.style.color = 'var(--error)';
+                  isCancelled = true;
+                  break;
+                }
 
                 console.warn(`Chunk ${chunkIndex} failed, retrying in ${currentBackoff}ms...`, err);
                 timeEl.textContent = 'Mất kết nối. Đang thử lại...';
@@ -1190,7 +1191,7 @@
           const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
           fileCard.innerHTML = `
-            <div class="file-header" title="${file.name}">${file.name}</div>
+            <div class="file-header" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</div>
             <div class="file-body">
               <div class="file-info">
                 <span class="file-size">${formatSize(file.size)}</span>
@@ -1208,6 +1209,10 @@
           const extractBtn = fileCard.querySelector('.extract-btn');
           if (extractBtn) {
             extractBtn.addEventListener('click', () => {
+              if (file.size > 500 * 1024 * 1024) {
+                alert('Cảnh báo: Tệp tin quá lớn (>500MB) để giải nén trên RAM máy chủ.\nXin vui lòng sử dụng nút Download nguyên gốc để bảo vệ băng thông!');
+                return;
+              }
               window.location.href = `/api/extract/${encodeURIComponent(file.id)}`;
             });
           }

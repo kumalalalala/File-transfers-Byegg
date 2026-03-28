@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { pipeline } from 'stream/promises';
 import { v4 as uuidv4 } from 'uuid';
 import qrcode from 'qrcode-terminal';
 import Fastify from 'fastify';
@@ -168,8 +169,9 @@ function simpleChecksum(buffer) {
 }
 
 async function calculateFastHash(filePath, size) {
+  let fd;
   try {
-    const fd = await fs.promises.open(filePath, 'r');
+    fd = await fs.promises.open(filePath, 'r');
     const chunkSize = 100 * 1024; // 100KB is super fast and enough
     const buf1 = Buffer.alloc(Math.min(chunkSize, size));
     await fd.read(buf1, 0, buf1.length, 0);
@@ -177,11 +179,14 @@ async function calculateFastHash(filePath, size) {
     if (size > chunkSize) {
       await fd.read(buf2, 0, buf2.length, size - chunkSize);
     }
-    await fd.close();
     const hash1 = simpleChecksum(buf1);
     const hash2 = simpleChecksum(buf2);
     return size + '_' + hash1 + '_' + hash2;
-  } catch (e) { return null; }
+  } catch (e) {
+    return null;
+  } finally {
+    if (fd) await fd.close().catch(() => { });
+  }
 }
 
 // Check Deduplication
@@ -228,7 +233,8 @@ fastify.get('/api/upload/status/:fileId', async (request, reply) => {
   if (!isStorageConfigured) return reply.status(400).send({ error: 'Storage not configured' });
   const fileId = request.params.fileId;
   if (!fileId) return { uploadedChunks: [] };
-  const safeFileId = path.basename(fileId);
+  const safeFileId = path.basename(fileId).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeFileId) return { uploadedChunks: [] };
   const tmpDir = path.join(storagePath, 'luutam', '.tmp', safeFileId);
 
   if (!fs.existsSync(tmpDir)) return { uploadedChunks: [] };
@@ -256,14 +262,16 @@ fastify.post('/api/upload/chunk', async (request, reply) => {
       if (part.fieldname === 'chunkIndex') chunkIndex = parseInt(part.value, 10);
     } else if (part.type === 'file') {
       if (!fileId) continue;
-      const safeFileId = path.basename(fileId);
+      const safeFileId = path.basename(fileId).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeFileId) continue;
       const tmpDir = path.join(storagePath, 'luutam', '.tmp', safeFileId);
       if (!fs.existsSync(tmpDir)) {
         await fs.promises.mkdir(tmpDir, { recursive: true }).catch(() => { });
       }
       const chunkPath = path.join(tmpDir, `chunk_${chunkIndex}`);
-      // Stream buffer directly to disk via Bun
-      await Bun.write(chunkPath, part.file);
+      // Natively pipe the stream to disk without bloating RAM ArrayBuffers (OOM Protection for chunks arbitrarily inflated by hackers)
+      const writeStream = fs.createWriteStream(chunkPath);
+      await pipeline(part.file, writeStream);
     }
   }
   return { success: true };
@@ -278,7 +286,9 @@ fastify.post('/api/upload/merge', async (request, reply) => {
 
   if (!fileId || !fileName || totalChunks == null) return reply.status(400).send({ error: 'Invalid config' });
 
-  const safeFileId = path.basename(fileId);
+  const safeFileId = path.basename(fileId).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeFileId) return reply.status(400).send({ error: 'Invalid fileId' });
+
   const tmpDir = path.join(storagePath, 'luutam', '.tmp', safeFileId);
 
   if (!fs.existsSync(tmpDir)) return reply.status(400).send({ error: 'Chunks not found' });
@@ -289,16 +299,20 @@ fastify.post('/api/upload/merge', async (request, reply) => {
 
   try {
     await Bun.write(finalPath, ''); // Ensure file exists
+    const fd = await fs.promises.open(finalPath, 'a');
 
-    for (let i = 0; i < totalChunks; i++) {
-      const chunkPath = path.join(tmpDir, `chunk_${i}`);
-      if (!fs.existsSync(chunkPath)) {
-        await fs.promises.unlink(finalPath).catch(() => { });
-        return reply.status(400).send({ error: `Missing chunk ${i}` });
+    try {
+      for (let i = 0; i < totalChunks; i++) {
+        const chunkPath = path.join(tmpDir, `chunk_${i}`);
+        if (!fs.existsSync(chunkPath)) {
+          throw new Error(`Missing chunk ${i}`);
+        }
+
+        const chunkBuffer = await fs.promises.readFile(chunkPath);
+        await fd.appendFile(chunkBuffer);
       }
-
-      const chunkBuffer = await Bun.file(chunkPath).arrayBuffer();
-      await fs.promises.appendFile(finalPath, Buffer.from(chunkBuffer));
+    } finally {
+      await fd.close().catch(() => { });
     }
 
     // Cleanup tmp dir
@@ -319,14 +333,16 @@ fastify.post('/api/upload/merge', async (request, reply) => {
   } catch (err) {
     if (fs.existsSync(finalPath)) await fs.promises.unlink(finalPath).catch(() => { });
     request.log.error('Merge error:', err);
-    return reply.status(500).send({ error: 'Merge failed.' });
+    const code = err.message.includes('Missing chunk') ? 400 : 500;
+    return reply.status(code).send({ error: err.message || 'Merge failed.' });
   }
 });
 
 // Cancel Upload (Clean tmp chunks)
 fastify.delete('/api/upload/cancel/:fileId', async (request, reply) => {
   if (!isStorageConfigured) return reply.status(400).send({ error: 'Storage not configured' });
-  const safeFileId = path.basename(request.params.fileId);
+  const safeFileId = path.basename(request.params.fileId).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeFileId) return { success: true };
   const tmpDir = path.join(storagePath, 'luutam', '.tmp', safeFileId);
   if (fs.existsSync(tmpDir)) {
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
@@ -393,7 +409,7 @@ fastify.get('/api/extract/:id', async (request, reply) => {
   const stats = fs.statSync(filePath);
   // Prevent OOM by limiting dynamic zip repackaging to files < 500MB
   if (stats.size > 500 * 1024 * 1024) {
-    return reply.status(400).send('File .zip quá lớn (>500MB) để giải nén trực tiếp trên Web. Vui lòng Download file gốc!');
+    return reply.status(400).send('Cảnh báo: Tệp tin gốc quá lớn (>500MB). Vui lòng Download trực tiếp để bảo vệ RAM máy chủ!');
   }
 
   try {
@@ -402,6 +418,15 @@ fastify.get('/api/extract/:id', async (request, reply) => {
 
     // Thường ZIP trên macOS có dính __MACOSX tàng hình
     const validEntries = zipEntries.filter(e => !e.isDirectory && !e.entryName.includes('__MACOSX/'));
+
+    // ZERO-DAY PATCH: Limit uncompressed dynamic RAM allocation to 500MB (OOM Bomb protection)
+    let totalUncompressedSize = 0;
+    for (const e of validEntries) {
+      totalUncompressedSize += e.header.size;
+    }
+    if (totalUncompressedSize > 500 * 1024 * 1024) {
+      return reply.status(400).send('Phát hiện Mã độc Zip Bomb: Lượng dữ liệu thực tế bên trong ZIP vượt mức 500MB tàn phá RAM máy chủ! Tiến trình giải nén Web bị kịch hoạt hủy bỏ.');
+    }
 
     if (validEntries.length === 0) return reply.status(400).send('Tệp ZIP trống.');
 
@@ -482,6 +507,24 @@ fastify.post('/api/shutdown', { preHandler: fastify.verifyAdmin }, async (reques
     process.exit(0);
   }, 1000);
 });
+
+// Background Cron: Clean orphaned .tmp directories older than 24 hours
+setInterval(async () => {
+  if (!storagePath) return;
+  const tmpDir = path.join(storagePath, 'luutam', '.tmp');
+  if (!fs.existsSync(tmpDir)) return;
+  try {
+    const tmpContents = await fs.promises.readdir(tmpDir);
+    const now = Date.now();
+    for (const item of tmpContents) {
+      const itemPath = path.join(tmpDir, item);
+      const stats = await fs.promises.stat(itemPath).catch(() => null);
+      if (stats && (now - stats.mtimeMs > 86400000)) { // 24 hours
+        await fs.promises.rm(itemPath, { recursive: true, force: true }).catch(() => { });
+      }
+    }
+  } catch (e) { }
+}, 60 * 60 * 1000); // 1 hour sweep
 
 const start = async () => {
   try {
