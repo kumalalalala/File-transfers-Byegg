@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileTransfer</title>
+  <meta name="description" content="Fast local file transfer powered by Bun and Fastify.">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2329b6f6'/%3E%3Cpath fill='%23fff' d='M30 50h40M50 30L70 50 50 70'/%3E%3C/svg%3E"
+    type="image/svg+xml">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(console.error);
+      });
+    }
+  </script>
+  <style>
+    :root {
+      --primary: #29b6f6;
+      --primary-dark: #0288d1;
+      --primary-soft: rgba(41, 182, 246, 0.18);
+      --surface: #17191d;
+      --surface-2: #20242a;
+      --surface-3: #2b3038;
+      --border: rgba(255, 255, 255, 0.09);
+      --text: #edf3f8;
+      --text-muted: #a9b4c1;
+      --success: #5dc98b;
+      --warning: #ffcc66;
+      --error: #ff6b6b;
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(41, 182, 246, 0.16), transparent 35%),
+        radial-gradient(circle at top right, rgba(93, 201, 139, 0.12), transparent 30%),
+        linear-gradient(160deg, #0c0f13 0%, #151922 48%, #0d1118 100%);
+      padding: 24px;
+      line-height: 1.55;
+    }
+
+    .container {
+      width: min(1200px, 100%);
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .hero {
+      margin-bottom: 24px;
+      padding: 24px 28px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 4px);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero h1 {
+      font-size: clamp(2.2rem, 3vw, 3.3rem);
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+      color: #ffffff;
+    }
+
+    .hero p {
+      color: var(--text-muted);
+      max-width: 760px;
+    }
+
+    .message {
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+
+    .message-error {
+      border-color: rgba(255, 107, 107, 0.4);
+      background: rgba(255, 107, 107, 0.14);
+      color: #ffe5e5;
+    }
+
+    .message-info {
+      border-color: rgba(41, 182, 246, 0.4);
+      background: rgba(41, 182, 246, 0.14);
+    }
+
+    .message-success {
+      border-color: rgba(93, 201, 139, 0.4);
+      background: rgba(93, 201, 139, 0.14);
+    }
+
+    #globalMessage {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10001;
+      width: min(420px, calc(100vw - 40px));
+      box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28);
+    }
+
+    .admin-warning {
+      margin-bottom: 20px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--primary);
+      border-radius: 0 14px 14px 0;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .card {
+      margin-bottom: 24px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 22px;
+      background: linear-gradient(90deg, rgba(41, 182, 246, 0.9), rgba(2, 136, 209, 0.9));
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .card-body {
+      padding: 22px;
+    }
+
+    .storage-config {
+      display: grid;
+      gap: 14px;
+    }
+
+    .path-input {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #storagePath {
+      flex: 1 1 420px;
+      min-height: 48px;
+      padding: 12px 14px;
+      color: var(--text);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+    }
+
+    #storagePath:focus {
+      outline: 2px solid rgba(41, 182, 246, 0.28);
+      border-color: rgba(41, 182, 246, 0.55);
+    }
+
+    .btn,
+    .upload-pick-btn,
+    .action-btn {
+      border: 0;
+      cursor: pointer;
+      border-radius: 12px;
+      font-weight: 700;
+      transition: transform 0.18s ease, filter 0.18s ease, background 0.18s ease;
+    }
+
+    .btn:hover,
+    .upload-pick-btn:hover,
+    .action-btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.04);
+    }
+
+    .btn {
+      min-height: 48px;
+      padding: 0 18px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff;
+    }
+
+    .btn-shutdown {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+      display: block;
+      background: linear-gradient(135deg, #ff6b6b, #d7263d);
+    }
+
+    #mainContent {
+      display: grid;
+      gap: 24px;
+    }
+
+    .upload-area {
+      padding: 36px 20px;
+      border-radius: 18px;
+      border: 2px dashed rgba(41, 182, 246, 0.4);
+      background: linear-gradient(180deg, rgba(41, 182, 246, 0.08), rgba(255, 255, 255, 0.03));
+      text-align: center;
+      transition: border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .upload-area.drag-over {
+      border-color: rgba(93, 201, 139, 0.7);
+      background: linear-gradient(180deg, rgba(93, 201, 139, 0.14), rgba(255, 255, 255, 0.05));
+    }
+
+    .upload-icon {
+      width: 82px;
+      height: 82px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--primary-soft);
+    }
+
+    .upload-area h2 {
+      margin-bottom: 8px;
+      font-size: 1.5rem;
+    }
+
+    .upload-area p {
+      color: var(--text-muted);
+      margin-bottom: 18px;
+    }
+
+    .upload-btn-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .upload-pick-btn {
+      min-height: 48px;
+      min-width: 164px;
+      padding: 0 18px;
+      background: var(--surface-3);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .upload-pick-btn:disabled,
+    .btn:disabled,
+    .action-btn:disabled {
+      cursor: wait;
+      opacity: 0.72;
+      filter: none;
+      transform: none;
+    }
+
+    #uploadList {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .files-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .file-card {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025));
+    }
+
+    .file-header {
+      padding: 15px 18px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .file-header-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .file-header-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .file-title-icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 18px;
+      color: #8fd8ff;
+      opacity: 0.95;
+    }
+
+    .file-body {
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .file-info {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 0.94rem;
+    }
+
+    .file-size {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .file-time {
+      text-align: right;
+    }
+
+    .progress-container {
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--primary), #7ed0f8);
+      transition: width 0.16s linear;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      min-height: 38px;
+      padding: 0 14px;
+      color: #fff;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+    }
+
+    .download-btn {
+      background: linear-gradient(135deg, rgba(41, 182, 246, 0.78), rgba(2, 136, 209, 0.88));
+    }
+
+    .extract-btn {
+      background: linear-gradient(135deg, rgba(93, 201, 139, 0.76), rgba(50, 160, 103, 0.88));
+    }
+
+    .preview-btn {
+      background: linear-gradient(135deg, rgba(255, 204, 102, 0.78), rgba(226, 157, 37, 0.88));
+    }
+
+    .delete-btn,
+    .cancel-btn {
+      background: linear-gradient(135deg, rgba(255, 107, 107, 0.76), rgba(215, 38, 61, 0.88));
+    }
+
+    .not-configured {
+      text-align: center;
+      padding: 44px 20px;
+      color: var(--text-muted);
+    }
+
+    .not-configured h3 {
+      color: #fff;
+      margin-bottom: 10px;
+      font-size: 1.35rem;
+    }
+
+    #preview-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 10, 15, 0.92);
+      backdrop-filter: blur(8px);
+    }
+
+    .close-modal {
+      position: absolute;
+      top: 18px;
+      right: 24px;
+      font-size: 42px;
+      line-height: 1;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #preview-content {
+      max-width: min(90vw, 1200px);
+      max-height: 88vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+
+
+    footer {
+      margin-top: 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 16px;
+      }
+
+      .hero,
+      .card-body {
+        padding: 18px;
+      }
+
+      .file-info {
+        flex-direction: column;
+      }
+
+      .file-time {
+        text-align: left;
+      }
+
+      #globalMessage {
+        right: 16px;
+        left: 16px;
+        width: auto;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div id="globalMessage" class="message message-info" style="display: none;"></div>
+
+    <header class="hero">
+      <h1>FileTransfer</h1>
+      <p>Optimized local transfer service built for large file and folder uploads with resumable chunking,
+        background downloads, and a cleaner Bun + Fastify runtime.</p>
+    </header>
+
+    <div id="adminWarning" class="admin-warning" style="display: none;">
+      <strong>Admin mode:</strong> configure the storage location on this host before guests start transferring files.
+    </div>
+
+    <div id="storageConfig" class="card" style="display: none;">
+      <div class="card-header">Configure Storage</div>
+      <div class="card-body">
+        <div class="storage-config">
+          <p>Select where uploaded files and folders should be stored on this machine.</p>
+          <div class="path-input">
+            <input type="text" id="storagePath" placeholder="Example: C:\Users\YourName\Documents\FileTransfer">
+            <button id="setStorageBtn" class="btn" type="button">Set Storage</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mainContent">
+      <div id="notConfigured" class="card not-configured" style="display: none;">
+        <h3>Storage is not configured yet</h3>
+        <p>Please ask the host machine to finish the setup before using FileTransfer.</p>
+      </div>
+
+      <div id="fileTransfer" style="display: none;">
+        <div class="card">
+          <div class="card-header">Upload</div>
+          <div class="card-body">
+            <div id="uploadArea" class="upload-area">
+              <div class="upload-icon" aria-hidden="true">
+                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+              </div>
+              <h2>Drag and drop files or folders</h2>
+              <p>Select files, select folders, or drop them directly here.</p>
+              <div class="upload-btn-row">
+                <button id="pickFileBtn" class="upload-pick-btn" type="button">Choose Files</button>
+                <button id="pickFolderBtn" class="upload-pick-btn" type="button">Choose Folder</button>
+              </div>
+              <input type="file" id="fileInput" style="display: none;" multiple>
+              <input type="file" id="folderInput" style="display: none;" webkitdirectory multiple>
+            </div>
+            <div id="uploadList"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">Available Files</div>
+          <div class="card-body">
+            <p id="fileCount">No files available</p>
+            <div id="filesContainer" class="files-container"></div>
+          </div>
+        </div>
+      </div>
+
+      <button id="shutdownBtn" class="btn btn-shutdown" style="display: none;" type="button">
+        Close Website and Delete All Data
+      </button>
+    </div>
+
+    <footer>Powered by Bun + Fastify</footer>
+  </div>
+
+  <div id="preview-modal" role="dialog" aria-modal="true" aria-label="Preview">
+    <span class="close-modal" aria-label="Close preview">&times;</span>
+    <div id="preview-content"></div>
+  </div>
+
+
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+
+</html>
