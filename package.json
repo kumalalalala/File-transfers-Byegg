@@ -1,0 +1,23 @@
+{
+  "name": "real-time-file-transfer",
+  "version": "1.0.0",
+  "description": "High-performance LAN file transfer powered by Bun and Fastify",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "bun run server.js",
+    "build:win": "bun build --compile --target=bun-windows-x64 server.js --outfile FileTransfer.exe",
+    "build:linux": "bun build --compile --target=bun-linux-x64 server.js --outfile FileTransfer",
+    "build:all": "bun run build:win && bun run build:linux"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/multipart": "^9.4.0",
+    "adm-zip": "^0.5.16",
+    "fastify": "^5.8.4",
+    "fastify-socket.io": "^5.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^13.0.0"
+  }
+}
