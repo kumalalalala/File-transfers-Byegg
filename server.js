@@ -255,13 +255,7 @@ async function openFileWithRetry(filePath, flag = 'r+') {
       return await fs.promises.open(filePath, flag);
     } catch (err) {
       if (err.code === 'ENOENT' && flag === 'r+') {
-        try {
-          await fs.promises.open(filePath, 'a').then(h => h.close());
-        } catch (aErr) {
-          if (aErr.code === 'EBUSY' || aErr.code === 'EPERM' || aErr.code === 'EACCES') {
-            await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
-          }
-        }
+        await fs.promises.open(filePath, 'a').then(h => h.close()).catch(() => {});
         continue;
       }
       if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 15) {
