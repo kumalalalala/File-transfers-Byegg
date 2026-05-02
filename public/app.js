@@ -379,12 +379,12 @@ async function runPool(items, concurrency, worker) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const adminWarning = document.getElementById('adminWarning');
-  const storageConfig = document.getElementById('storageConfig');
+  const hostDirSetupCard = document.getElementById('hostDirSetupCard');
   const mainContent = document.getElementById('mainContent');
   const notConfigured = document.getElementById('notConfigured');
   const fileTransfer = document.getElementById('fileTransfer');
   const shutdownBtn = document.getElementById('shutdownBtn');
-  const storagePathInput = document.getElementById('storagePath');
+  const hostDirectoryInput = document.getElementById('hostDirectoryInput');
   const setStorageBtn = document.getElementById('setStorageBtn');
   const uploadArea = document.getElementById('uploadArea');
   const fileInput = document.getElementById('fileInput');
@@ -452,15 +452,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateUI() {
-    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const isLocalHost = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(window.location.hostname) || window.location.hostname === '';
 
     if (!storageConfigured) {
       if (isLocalHost) {
-        storageConfig.style.display = 'block';
+        hostDirSetupCard.style.display = 'block';
         adminWarning.style.display = 'block';
         mainContent.style.display = 'none';
       } else {
-        storageConfig.style.display = 'none';
+        hostDirSetupCard.style.display = 'none';
         adminWarning.style.display = 'none';
         mainContent.style.display = 'block';
         notConfigured.style.display = 'block';
@@ -470,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    storageConfig.style.display = 'none';
+    hostDirSetupCard.style.display = 'none';
     adminWarning.style.display = 'none';
     mainContent.style.display = 'block';
     notConfigured.style.display = 'none';
@@ -484,10 +484,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await fetchJson('/api/status');
       storageConfigured = Boolean(data.storageConfigured);
       filesList = Array.isArray(data.files) ? data.files : [];
-      updateUI();
     } catch (error) {
       console.error(error);
       showMessage(error.message || 'Unable to fetch status', 'error');
+    } finally {
+      updateUI();
     }
   }
 
@@ -513,19 +514,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === modal) closePreviewModal();
   });
 
-  function triggerBackgroundDownload(url, frameId) {
-    let frame = document.getElementById(frameId);
-    if (!frame) {
-      frame = document.createElement('iframe');
-      frame.id = frameId;
-      frame.style.display = 'none';
-      document.body.appendChild(frame);
-    }
-    frame.src = url;
-  }
-
-  function downloadFrameId(id) {
-    return `download-frame-${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  function triggerBackgroundDownload(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   function renderFiles() {
@@ -573,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessage('ZIP extract in browser mode is limited to 500MB.', 'error');
             return;
           }
-          triggerBackgroundDownload(`/api/extract/${encodeURIComponent(file.id)}`, downloadFrameId(file.id));
+          triggerBackgroundDownload(`/api/extract/${encodeURIComponent(file.id)}`);
         });
       }
 
@@ -587,7 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isFolder) {
           downloadBtn.disabled = true;
           downloadBtn.textContent = 'Preparing...';
-          triggerBackgroundDownload(`/api/extract/${encodeURIComponent(file.id)}`, downloadFrameId(file.id));
+          triggerBackgroundDownload(`/api/extract/${encodeURIComponent(file.id)}`);
           setTimeout(() => {
             downloadBtn.disabled = false;
             downloadBtn.textContent = 'Download';
@@ -595,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        triggerBackgroundDownload(`/files/${encodeURIComponent(file.id)}`, downloadFrameId(file.id));
+        triggerBackgroundDownload(`/files/${encodeURIComponent(file.id)}`);
       });
 
       const deleteBtn = fileCard.querySelector('.delete-btn');
@@ -864,9 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const activeChunkProgress = new Map();
 
       await runPool(missingChunks, FILE_CHUNK_CONCURRENCY, async chunkIndex => {
-        const bytes = await sendChunk(file, fileId, uploadConfig, chunkIndex, abortController.signal, () => {
-          setStatus('Connection issue. Retrying...', 'warning');
-        }, (loadedBytes) => {
+        const bytes = await sendChunk(file, fileId, uploadConfig, chunkIndex, abortController.signal, null, (loadedBytes) => {
           activeChunkProgress.set(chunkIndex, loadedBytes);
           let activeSum = 0;
           activeChunkProgress.forEach((val) => { activeSum += val; });
@@ -1002,9 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
           item.task.uploadConfig,
           item.chunkIndex,
           abortController.signal,
-          () => {
-            setStatus('Connection issue. Retrying...', 'warning');
-          },
+          null,
           (loadedBytes) => {
             activeChunkProgress.set(item.task.fileId + '_' + item.chunkIndex, loadedBytes);
             let activeSum = 0;
@@ -1120,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   setStorageBtn.addEventListener('click', async () => {
-    const targetPath = storagePathInput.value.trim();
+    const targetPath = hostDirectoryInput.value.trim();
     if (!targetPath) {
       showMessage('Please enter a valid path', 'error');
       return;

@@ -1,0 +1,6 @@
+FileTransfer.exe
+FileTransfer
+node_modules/
+.env
+storage/
+logs/

@@ -148,7 +148,7 @@
       padding: 22px;
     }
 
-    .storage-config {
+    .host-dir-setup {
       display: grid;
       gap: 14px;
     }
@@ -159,8 +159,9 @@
       flex-wrap: wrap;
     }
 
-    #storagePath {
+    #hostDirectoryInput {
       flex: 1 1 420px;
+      min-width: 0;
       min-height: 48px;
       padding: 12px 14px;
       color: var(--text);
@@ -169,7 +170,7 @@
       background: var(--surface-3);
     }
 
-    #storagePath:focus {
+    #hostDirectoryInput:focus {
       outline: 2px solid rgba(41, 182, 246, 0.28);
       border-color: rgba(41, 182, 246, 0.55);
     }
@@ -482,13 +483,13 @@
       <strong>Admin mode:</strong> configure the storage location on this host before guests start transferring files.
     </div>
 
-    <div id="storageConfig" class="card" style="display: none;">
+    <div id="hostDirSetupCard" class="card" style="display: none;">
       <div class="card-header">Configure Storage</div>
       <div class="card-body">
-        <div class="storage-config">
+        <div class="host-dir-setup">
           <p>Select where uploaded files and folders should be stored on this machine.</p>
           <div class="path-input">
-            <input type="text" id="storagePath" placeholder="Example: C:\Users\YourName\Documents\FileTransfer">
+            <input type="text" id="hostDirectoryInput" placeholder="Example: C:\Users\YourName\Documents\FileTransfer">
             <button id="setStorageBtn" class="btn" type="button">Set Storage</button>
           </div>
         </div>

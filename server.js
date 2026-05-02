@@ -248,6 +248,32 @@ async function statIfExists(targetPath) {
   return fs.promises.stat(targetPath).catch(() => null);
 }
 
+async function openFileWithRetry(filePath, flag = 'r+') {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fs.promises.open(filePath, flag);
+    } catch (err) {
+      if (err.code === 'ENOENT' && flag === 'r+') {
+        try {
+          await fs.promises.open(filePath, 'a').then(h => h.close());
+        } catch (aErr) {
+          if (aErr.code === 'EBUSY' || aErr.code === 'EPERM' || aErr.code === 'EACCES') {
+            await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+          }
+        }
+        continue;
+      }
+      if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 15) {
+        attempt++;
+        await new Promise(r => setTimeout(r, 100 + Math.random() * 200));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 function parseRangeHeader(rangeHeader, size) {
   if (!rangeHeader || !rangeHeader.startsWith('bytes=')) return null;
   const [rawStart, rawEnd] = rangeHeader.replace('bytes=', '').split('-');
@@ -407,7 +433,7 @@ async function readUploadSession(fileId) {
 }
 
 async function ensureUploadSessionBitmap(session) {
-  const handle = await fs.promises.open(session.bitmapPath, 'a+');
+  const handle = await openFileWithRetry(session.bitmapPath, 'a+');
   try {
     const stats = await handle.stat();
     if (stats.size !== session.totalChunks) {
@@ -446,7 +472,7 @@ async function ensureUploadSession(fileId, config) {
   }
 
   await ensureUploadSessionBitmap(session);
-  const handle = await fs.promises.open(session.dataPath, 'a');
+  const handle = await openFileWithRetry(session.dataPath, 'a');
   await handle.close().catch(() => { });
   return session;
 }
@@ -495,7 +521,7 @@ async function inspectUploadBitmap(session, options = {}) {
 }
 
 async function markUploadChunkReceived(session, chunkIndex) {
-  const handle = await fs.promises.open(session.bitmapPath, 'r+');
+  const handle = await openFileWithRetry(session.bitmapPath, 'r+');
   try {
     await handle.write(Buffer.from([1]), 0, 1, chunkIndex);
   } finally {
@@ -510,7 +536,7 @@ async function writeReadableChunkToSession(readable, session, chunkStart, option
   let handle;
 
   try {
-    handle = await fs.promises.open(session.dataPath, existingStats?.isFile() ? 'r+' : 'w+');
+    handle = await openFileWithRetry(session.dataPath, 'r+');
     let position = chunkStart;
 
     for await (const chunk of readable) {
